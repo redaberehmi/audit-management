@@ -1,0 +1,71 @@
+# ================================================================
+# Render Blueprint — déploiement en 1 clic
+# Déposer ce fichier à la racine du repo et connecter sur render.com
+# ================================================================
+
+services:
+  # ── Backend NestJS ──────────────────────────────────────────
+  - type: web
+    name: audit-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    region: frankfurt              # eu-central pour RGPD
+    plan: starter                  # $7/mois (512 MB RAM, 0.5 CPU)
+    healthCheckPath: /api/health/ping
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: DATABASE_URL
+        fromDatabase:
+          name: audit-postgres
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 15m
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: 7d
+      - key: FRONTEND_URL
+        sync: false                # À renseigner manuellement dans le dashboard
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: THROTTLE_TTL
+        value: 60
+      - key: THROTTLE_LIMIT
+        value: 100
+
+  # ── Frontend Next.js ────────────────────────────────────────
+  - type: web
+    name: audit-frontend
+    runtime: docker
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    region: frankfurt
+    plan: starter
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        sync: false                # Ex: https://audit-backend.onrender.com/api
+
+databases:
+  # ── PostgreSQL géré par Render ──────────────────────────────
+  - name: audit-postgres
+    plan: starter                  # $7/mois (256 MB RAM, 1 GB stockage)
+    region: frankfurt
+    databaseName: audit_db
+    user: audit_user
+    postgresMajorVersion: 16

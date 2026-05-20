@@ -1,0 +1,422 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== ENUMS ====================
+
+enum Role {
+  ADMIN
+  AUDIT_MANAGER
+  AUDITOR
+  ACTION_OWNER
+  DG
+}
+
+enum MissionStatus {
+  DRAFT
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  ARCHIVED
+}
+
+enum MissionType {
+  INTERNAL
+  EXTERNAL
+  REGULATORY
+  OPERATIONAL
+  FINANCIAL
+  IT
+}
+
+enum RecommendationStatus {
+  DRAFT
+  OPEN
+  PLAN_TO_DEFINE
+  PLAN_TO_VALIDATE
+  IN_PROGRESS
+  OVERDUE
+  COMPLETED
+  PENDING_VALIDATION
+  CLOSED
+  DEFERRED
+}
+
+enum Criticality {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ActionPlanStatus {
+  DRAFT
+  APPROVED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  DEFERRED
+}
+
+enum NotificationType {
+  DEADLINE_REMINDER
+  ESCALATION
+  STATUS_CHANGE
+  ASSIGNMENT
+  VALIDATION_REQUEST
+  RELANCE
+  SYSTEM
+}
+
+enum DocumentType {
+  MISSION_REPORT
+  EVIDENCE
+  ACTION_PROOF
+  TEMPLATE
+  OTHER
+}
+
+enum AuditLogAction {
+  CREATE
+  UPDATE
+  DELETE
+  STATUS_CHANGE
+  LOGIN
+  LOGOUT
+  UPLOAD
+  DOWNLOAD
+  EXPORT
+  VALIDATE
+  REJECT
+}
+
+// ==================== USERS ====================
+
+model User {
+  id                String    @id @default(uuid())
+  email             String    @unique
+  password          String
+  firstName         String
+  lastName          String
+  role              Role      @default(AUDITOR)
+  isActive          Boolean   @default(true)
+  lastLoginAt       DateTime?
+  passwordChangedAt DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relations
+  directionId String?
+  direction   Direction? @relation(fields: [directionId], references: [id])
+
+  missions              MissionAuditor[]
+  responsibleRecs       Recommendation[]       @relation("ResponsibleUser")
+  validatorRecs         Recommendation[]       @relation("ValidatorUser")
+  actionPlans           ActionPlan[]
+  comments              Comment[]
+  notifications         Notification[]
+  auditLogs             AuditLog[]
+  uploadedDocuments     Document[]
+  refreshTokens         RefreshToken[]
+  sentNotifications     Notification[]         @relation("SentBy")
+
+  @@index([email])
+  @@index([role])
+  @@index([isActive])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ==================== REFERENTIALS ====================
+
+model Direction {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users           User[]
+  recommendations Recommendation[]
+  departments     Department[]
+
+  @@index([code])
+  @@map("directions")
+}
+
+model Department {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  directionId String
+  direction   Direction @relation(fields: [directionId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  recommendations Recommendation[]
+
+  @@index([directionId])
+  @@map("departments")
+}
+
+// ==================== MISSIONS ====================
+
+model Mission {
+  id          String        @id @default(uuid())
+  reference   String        @unique
+  title       String
+  type        MissionType
+  scope       String
+  objectives  String
+  startDate   DateTime
+  endDate     DateTime
+  status      MissionStatus @default(DRAFT)
+  isArchived  Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  createdById String
+  auditors    MissionAuditor[]
+  recommendations Recommendation[]
+  documents   Document[]
+  auditLogs   AuditLog[]
+
+  @@index([status])
+  @@index([type])
+  @@index([reference])
+  @@map("missions")
+}
+
+model MissionAuditor {
+  id        String   @id @default(uuid())
+  missionId String
+  userId    String
+  isLead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  mission Mission @relation(fields: [missionId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([missionId, userId])
+  @@map("mission_auditors")
+}
+
+// ==================== RECOMMENDATIONS ====================
+
+model Recommendation {
+  id          String               @id @default(uuid())
+  reference   String               @unique
+  source      String
+  constat     String
+  description String
+  risk        String
+  criticality Criticality          @default(MEDIUM)
+  status      RecommendationStatus @default(DRAFT)
+  progress    Int                  @default(0)
+  dueDate     DateTime
+  closedAt    DateTime?
+  isArchived  Boolean              @default(false)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  // Relations
+  missionId    String?
+  mission      Mission?   @relation(fields: [missionId], references: [id])
+  directionId  String
+  direction    Direction  @relation(fields: [directionId], references: [id])
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+  responsibleId String
+  responsible   User      @relation("ResponsibleUser", fields: [responsibleId], references: [id])
+  validatorId   String?
+  validator     User?     @relation("ValidatorUser", fields: [validatorId], references: [id])
+
+  actionPlans  ActionPlan[]
+  comments     Comment[]
+  documents    Document[]
+  history      RecommendationHistory[]
+  notifications Notification[]
+  auditLogs    AuditLog[]
+
+  @@index([status])
+  @@index([criticality])
+  @@index([dueDate])
+  @@index([directionId])
+  @@index([responsibleId])
+  @@index([reference])
+  @@map("recommendations")
+}
+
+model RecommendationHistory {
+  id               String               @id @default(uuid())
+  recommendationId String
+  recommendation   Recommendation       @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+  previousStatus   RecommendationStatus?
+  newStatus        RecommendationStatus
+  previousProgress Int?
+  newProgress      Int?
+  changedById      String
+  changedByName    String
+  comment          String?
+  createdAt        DateTime             @default(now())
+
+  @@index([recommendationId])
+  @@map("recommendation_history")
+}
+
+// ==================== ACTION PLANS ====================
+
+model ActionPlan {
+  id               String           @id @default(uuid())
+  title            String
+  description      String
+  status           ActionPlanStatus @default(DRAFT)
+  progress         Int              @default(0)
+  startDate        DateTime
+  dueDate          DateTime
+  completedAt      DateTime?
+  deferredDate     DateTime?
+  deferralReason   String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  // Relations
+  recommendationId String
+  recommendation   Recommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+  ownerId          String
+  owner            User           @relation(fields: [ownerId], references: [id])
+
+  comments  Comment[]
+  documents Document[]
+  auditLogs AuditLog[]
+
+  @@index([recommendationId])
+  @@index([ownerId])
+  @@index([status])
+  @@index([dueDate])
+  @@map("action_plans")
+}
+
+// ==================== COMMENTS ====================
+
+model Comment {
+  id        String   @id @default(uuid())
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  authorId         String
+  author           User            @relation(fields: [authorId], references: [id])
+  recommendationId String?
+  recommendation   Recommendation? @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+  actionPlanId     String?
+  actionPlan       ActionPlan?     @relation(fields: [actionPlanId], references: [id], onDelete: Cascade)
+
+  @@index([recommendationId])
+  @@index([actionPlanId])
+  @@map("comments")
+}
+
+// ==================== DOCUMENTS ====================
+
+model Document {
+  id           String       @id @default(uuid())
+  name         String
+  originalName String
+  mimeType     String
+  size         Int
+  path         String
+  type         DocumentType @default(OTHER)
+  version      Int          @default(1)
+  createdAt    DateTime     @default(now())
+
+  uploadedById     String
+  uploadedBy       User            @relation(fields: [uploadedById], references: [id])
+  missionId        String?
+  mission          Mission?        @relation(fields: [missionId], references: [id], onDelete: Cascade)
+  recommendationId String?
+  recommendation   Recommendation? @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+  actionPlanId     String?
+  actionPlan       ActionPlan?     @relation(fields: [actionPlanId], references: [id], onDelete: Cascade)
+
+  @@index([missionId])
+  @@index([recommendationId])
+  @@index([actionPlanId])
+  @@map("documents")
+}
+
+// ==================== NOTIFICATIONS ====================
+
+model Notification {
+  id        String           @id @default(uuid())
+  type      NotificationType
+  title     String
+  message   String
+  isRead    Boolean          @default(false)
+  isSent    Boolean          @default(false)
+  sentAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  recipientId      String
+  recipient        User            @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  sentById         String?
+  sentBy           User?           @relation("SentBy", fields: [sentById], references: [id])
+  recommendationId String?
+  recommendation   Recommendation? @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId])
+  @@index([isRead])
+  @@index([type])
+  @@map("notifications")
+}
+
+// ==================== AUDIT LOGS ====================
+
+model AuditLog {
+  id         String         @id @default(uuid())
+  action     AuditLogAction
+  entityType String
+  entityId   String
+  oldValues  Json?
+  newValues  Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime       @default(now())
+
+  userId           String?
+  user             User?           @relation(fields: [userId], references: [id])
+  missionId        String?
+  mission          Mission?        @relation(fields: [missionId], references: [id])
+  recommendationId String?
+  recommendation   Recommendation? @relation(fields: [recommendationId], references: [id])
+  actionPlanId     String?
+  actionPlan       ActionPlan?     @relation(fields: [actionPlanId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([action])
+  @@map("audit_logs")
+}

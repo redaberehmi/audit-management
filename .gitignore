@@ -1,0 +1,55 @@
+# ── Secrets (JAMAIS dans le repo) ──────────────────────────────
+.env
+.env.local
+.env.production
+.env.prod
+*.pem
+*.key
+*.cert
+secrets/
+
+# ── Node ────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+
+# ── Next.js ─────────────────────────────────────────────────────
+frontend/.next/
+frontend/out/
+frontend/.vercel/
+frontend/next-env.d.ts
+
+# ── NestJS Build ────────────────────────────────────────────────
+backend/dist/
+backend/build/
+
+# ── Prisma ──────────────────────────────────────────────────────
+backend/prisma/migrations/dev.db
+backend/prisma/*.db
+
+# ── Uploads locaux ──────────────────────────────────────────────
+backend/uploads/
+uploads/
+
+# ── Backups ─────────────────────────────────────────────────────
+backups/
+*.sql.gz
+*.dump
+
+# ── Docker volumes locaux ───────────────────────────────────────
+postgres_data/
+
+# ── IDE ─────────────────────────────────────────────────────────
+.idea/
+.vscode/settings.json
+*.sw?
+
+# ── OS ──────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Dev tools (ne pas déployer) ─────────────────────────────────
+frontend/take-screenshots.js
+screenshots/

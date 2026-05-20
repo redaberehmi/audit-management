@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground; }
+}
+
+/* Scrollbar custom */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { @apply bg-muted; }
+::-webkit-scrollbar-thumb { @apply bg-muted-foreground/30 rounded-full; }
+::-webkit-scrollbar-thumb:hover { @apply bg-muted-foreground/50; }
+
+/* Sidebar */
+.sidebar-nav-item {
+  @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all;
+}
+.sidebar-nav-item:hover {
+  @apply bg-accent text-accent-foreground;
+}
+.sidebar-nav-item.active {
+  @apply bg-primary text-primary-foreground;
+}
+
+/* Status badges */
+.status-draft { @apply bg-gray-100 text-gray-700 border-gray-200; }
+.status-open { @apply bg-blue-100 text-blue-700 border-blue-200; }
+.status-in-progress { @apply bg-yellow-100 text-yellow-700 border-yellow-200; }
+.status-overdue { @apply bg-red-100 text-red-700 border-red-200; }
+.status-completed { @apply bg-green-100 text-green-700 border-green-200; }
+.status-closed { @apply bg-gray-100 text-gray-500 border-gray-200; }
+.status-pending { @apply bg-purple-100 text-purple-700 border-purple-200; }
+
+/* Criticality badges */
+.criticality-low { @apply bg-green-100 text-green-700; }
+.criticality-medium { @apply bg-yellow-100 text-yellow-700; }
+.criticality-high { @apply bg-orange-100 text-orange-700; }
+.criticality-critical { @apply bg-red-100 text-red-700; }
+
+/* Print styles */
+@media print {
+  .no-print { display: none !important; }
+  .print-break { page-break-after: always; }
+}
