@@ -6,6 +6,11 @@ import * as bcrypt from 'bcryptjs';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
+function excludePassword<T extends { password?: any }>(user: T): Omit<T, 'password'> {
+  const { password, ...rest } = user as any;
+  return rest;
+}
+
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
@@ -19,12 +24,7 @@ export class UsersService {
     const password = await bcrypt.hash(dto.password || 'Audit@2024!', 12);
 
     const user = await this.prisma.user.create({
-      data: {
-        ...dto,
-        email: dto.email.toLowerCase(),
-        password,
-      },
-      omit: { password: true },
+      data: { ...dto, email: dto.email.toLowerCase(), password },
       include: { direction: { select: { id: true, name: true } } },
     });
 
@@ -38,7 +38,7 @@ export class UsersService {
       },
     });
 
-    return user;
+    return excludePassword(user);
   }
 
   async findAll(page = 1, limit = 20, search?: string, role?: string) {
@@ -52,14 +52,12 @@ export class UsersService {
         { email: { contains: search, mode: 'insensitive' } },
       ];
     }
-
     if (role) where.role = role;
 
-    const [total, items] = await Promise.all([
+    const [total, users] = await Promise.all([
       this.prisma.user.count({ where }),
       this.prisma.user.findMany({
         where,
-        omit: { password: true },
         include: { direction: { select: { id: true, name: true } } },
         skip,
         take: limit,
@@ -67,17 +65,19 @@ export class UsersService {
       }),
     ]);
 
-    return { items, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    return {
+      items: users.map(excludePassword),
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
   }
 
   async findOne(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
-      omit: { password: true },
       include: { direction: { select: { id: true, name: true } } },
     });
     if (!user) throw new NotFoundException('Utilisateur non trouvé');
-    return user;
+    return excludePassword(user);
   }
 
   async update(id: string, dto: UpdateUserDto, currentUserId: string) {
@@ -90,11 +90,7 @@ export class UsersService {
       updateData.passwordChangedAt = new Date();
     }
 
-    const updated = await this.prisma.user.update({
-      where: { id },
-      data: updateData,
-      omit: { password: true },
-    });
+    const updated = await this.prisma.user.update({ where: { id }, data: updateData });
 
     await this.prisma.auditLog.create({
       data: {
@@ -106,18 +102,18 @@ export class UsersService {
       },
     });
 
-    return updated;
+    return excludePassword(updated);
   }
 
   async toggleActive(id: string, currentUserId: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Utilisateur non trouvé');
 
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id },
       data: { isActive: !user.isActive },
-      omit: { password: true },
     });
+    return excludePassword(updated);
   }
 
   async resetPassword(id: string, newPassword: string, currentUserId: string) {
@@ -129,9 +125,7 @@ export class UsersService {
       where: { id },
       data: { password: hashed, passwordChangedAt: new Date() },
     });
-
     await this.prisma.refreshToken.deleteMany({ where: { userId: id } });
-
     return { message: 'Mot de passe réinitialisé avec succès' };
   }
 }

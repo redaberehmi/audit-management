@@ -145,11 +145,11 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { direction: true },
-      omit: { password: true },
     });
 
     if (!user) throw new NotFoundException('Utilisateur non trouvé');
-    return user;
+    const { password: _, ...userWithoutPassword } = user;
+    return userWithoutPassword;
   }
 
   private async generateTokens(userId: string, email: string, role: string) {
