@@ -1,78 +1,79 @@
 'use client';
 
 import { useState } from 'react';
-import { BarChart3, FileText, Download, Calendar, Building2, AlertTriangle } from 'lucide-react';
+import { BarChart3, FileText, Download, Calendar, Building2, AlertTriangle, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/hooks/use-toast';
+import api from '@/lib/axios';
 
-const REPORT_TYPES = [
+const MONTHS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+const REPORTS = [
   {
-    id: 'monthly',
-    title: 'Rapport mensuel',
-    description: 'Synthèse des recommandations créées, clôturées et en retard sur une période mensuelle.',
-    icon: Calendar,
-    color: 'text-blue-600',
-    bg: 'bg-blue-50',
-    formats: ['Excel', 'PDF'],
+    id: 'monthly-excel', title: 'Rapport mensuel', fmt: 'excel',
+    description: 'Synthèse des recommandations créées, clôturées et en retard pour la période sélectionnée.',
+    icon: Calendar, color: 'text-blue-600', bg: 'bg-blue-50', btnColor: 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100',
+    endpoint: (y: number, m: number) => `/reports/monthly/excel?year=${y}&month=${m}`,
+    filename: (y: number, m: number) => `rapport-mensuel-${y}-${m}.xlsx`,
+    mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   },
   {
-    id: 'by-direction',
-    title: 'Rapport par direction',
-    description: 'Analyse détaillée des recommandations par direction avec taux de clôture et criticités.',
-    icon: Building2,
-    color: 'text-purple-600',
-    bg: 'bg-purple-50',
-    formats: ['Excel'],
+    id: 'monthly-pdf', title: 'Rapport mensuel PDF', fmt: 'pdf',
+    description: 'Rapport exécutif PDF avec KPIs et synthèse pour la Direction Générale.',
+    icon: FileText, color: 'text-red-600', bg: 'bg-red-50', btnColor: 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100',
+    endpoint: (y: number, m: number) => `/reports/monthly/pdf?year=${y}&month=${m}`,
+    filename: (y: number, m: number) => `rapport-mensuel-${y}-${m}.pdf`,
+    mime: 'application/pdf',
   },
   {
-    id: 'overdue',
-    title: 'Rapport des retards',
-    description: 'Liste exhaustive des recommandations en retard avec ancienneté et responsables.',
-    icon: AlertTriangle,
-    color: 'text-red-600',
-    bg: 'bg-red-50',
-    formats: ['Excel', 'PDF'],
-  },
-  {
-    id: 'critical',
-    title: 'Rapport critiques',
-    description: 'Focus sur les recommandations de criticité haute et critique non encore clôturées.',
-    icon: AlertTriangle,
-    color: 'text-orange-600',
-    bg: 'bg-orange-50',
-    formats: ['Excel', 'PDF'],
-  },
-  {
-    id: 'full',
-    title: 'Rapport global',
+    id: 'recommendations-excel', title: 'Export recommandations', fmt: 'excel',
     description: 'Export complet de toutes les recommandations avec tous les champs disponibles.',
-    icon: BarChart3,
-    color: 'text-green-600',
-    bg: 'bg-green-50',
-    formats: ['Excel'],
+    icon: BarChart3, color: 'text-green-600', bg: 'bg-green-50', btnColor: 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100',
+    endpoint: () => '/recommendations/export/excel',
+    filename: () => `recommandations-${Date.now()}.xlsx`,
+    mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   },
   {
-    id: 'dg',
-    title: 'Rapport DG',
-    description: 'Rapport exécutif avec KPIs, graphiques et synthèse pour la Direction Générale.',
-    icon: FileText,
-    color: 'text-[#1e3a5f]',
-    bg: 'bg-slate-50',
-    formats: ['PDF'],
+    id: 'overdue', title: 'Rapport des retards', fmt: 'excel',
+    description: 'Liste exhaustive des recommandations en retard avec ancienneté et responsables.',
+    icon: AlertTriangle, color: 'text-orange-600', bg: 'bg-orange-50', btnColor: 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100',
+    endpoint: (y: number, m: number) => `/reports/monthly/excel?year=${y}&month=${m}&filterOverdue=true`,
+    filename: (y: number, m: number) => `retards-${y}-${m}.xlsx`,
+    mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  },
+  {
+    id: 'by-direction', title: 'Par direction', fmt: 'excel',
+    description: 'Analyse détaillée des recommandations par direction avec taux de clôture.',
+    icon: Building2, color: 'text-purple-600', bg: 'bg-purple-50', btnColor: 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100',
+    endpoint: (y: number, m: number) => `/reports/monthly/excel?year=${y}&month=${m}`,
+    filename: (y: number, m: number) => `rapport-directions-${y}-${m}.xlsx`,
+    mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   },
 ];
 
-const MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
-
 export default function ReportsPage() {
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
-  const [generating, setGenerating] = useState<string | null>(null);
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [month, setMonth] = useState(new Date().getMonth() + 1);
+  const [loading, setLoading] = useState<string | null>(null);
+  const { toast } = useToast();
 
-  const handleGenerate = async (reportId: string, format: string) => {
-    setGenerating(`${reportId}-${format}`);
-    await new Promise(r => setTimeout(r, 1500));
-    setGenerating(null);
-    alert(`Rapport "${reportId}" en format ${format} généré (simulation). Connectez le backend pour l'export réel.`);
+  const handleDownload = async (report: typeof REPORTS[0]) => {
+    setLoading(report.id);
+    try {
+      const url = report.endpoint(year, month);
+      const res = await api.get(url, { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: report.mime });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = report.filename(year, month);
+      link.click();
+      URL.revokeObjectURL(link.href);
+      toast({ title: `${report.title} téléchargé ✅` });
+    } catch (e: any) {
+      toast({ title: 'Erreur lors du téléchargement', description: 'Vérifiez que le backend est accessible.', variant: 'destructive' });
+    } finally {
+      setLoading(null);
+    }
   };
 
   return (
@@ -84,26 +85,20 @@ export default function ReportsPage() {
 
       {/* Sélecteur période */}
       <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
-        <h3 className="text-sm font-semibold text-gray-700 mb-4">Période de rapport</h3>
+        <h3 className="text-sm font-semibold text-gray-700 mb-4">Période de référence</h3>
         <div className="flex gap-4 flex-wrap">
           <div>
             <label className="text-xs text-gray-500 block mb-1">Année</label>
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(+e.target.value)}
-              className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {[2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+            <select value={year} onChange={e => setYear(+e.target.value)}
+              className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+              {[2023,2024,2025,2026].map(y => <option key={y} value={y}>{y}</option>)}
             </select>
           </div>
           <div>
             <label className="text-xs text-gray-500 block mb-1">Mois</label>
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(+e.target.value)}
-              className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {MONTHS.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+            <select value={month} onChange={e => setMonth(+e.target.value)}
+              className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+              {MONTHS.map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
             </select>
           </div>
         </div>
@@ -111,12 +106,13 @@ export default function ReportsPage() {
 
       {/* Grille rapports */}
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-        {REPORT_TYPES.map((report) => {
+        {REPORTS.map(report => {
           const Icon = report.icon;
+          const isLoading = loading === report.id;
           return (
             <div key={report.id} className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition">
               <div className="flex items-start gap-3 mb-3">
-                <div className={cn('p-2.5 rounded-xl', report.bg)}>
+                <div className={cn('p-2.5 rounded-xl flex-shrink-0', report.bg)}>
                   <Icon className={cn('w-5 h-5', report.color)} />
                 </div>
                 <div>
@@ -124,25 +120,17 @@ export default function ReportsPage() {
                   <p className="text-xs text-gray-500 mt-1 leading-relaxed">{report.description}</p>
                 </div>
               </div>
-              <div className="flex gap-2 mt-4 pt-4 border-t border-gray-50">
-                {report.formats.map((fmt) => (
-                  <button
-                    key={fmt}
-                    onClick={() => handleGenerate(report.id, fmt)}
-                    disabled={generating === `${report.id}-${fmt}`}
-                    className={cn(
-                      'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition flex-1 justify-center',
-                      fmt === 'PDF'
-                        ? 'bg-red-50 text-red-700 border border-red-200 hover:bg-red-100'
-                        : 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100',
-                      generating === `${report.id}-${fmt}` && 'opacity-50 cursor-wait',
-                    )}
-                  >
-                    <Download size={12} />
-                    {generating === `${report.id}-${fmt}` ? 'Génération...' : fmt}
-                  </button>
-                ))}
-              </div>
+              <button
+                onClick={() => handleDownload(report)}
+                disabled={isLoading}
+                className={cn(
+                  'flex items-center justify-center gap-2 w-full px-3 py-2 text-xs font-medium rounded-lg transition border mt-4 disabled:opacity-50',
+                  report.btnColor,
+                )}
+              >
+                {isLoading ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                {isLoading ? 'Génération...' : `Télécharger ${report.fmt.toUpperCase()}`}
+              </button>
             </div>
           );
         })}

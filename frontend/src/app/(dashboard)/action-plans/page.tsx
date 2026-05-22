@@ -1,8 +1,13 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { CheckSquare, Clock, AlertTriangle, TrendingUp, Plus } from 'lucide-react';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useForm } from 'react-hook-form';
+import { CheckSquare, Clock, AlertTriangle, TrendingUp, Plus, Loader2, MessageSquare } from 'lucide-react';
 import { cn, formatDate } from '@/lib/utils';
+import { Modal } from '@/components/ui/modal';
+import { recommendationsService } from '@/services/recommendations.service';
+import { useToast } from '@/hooks/use-toast';
 import api from '@/lib/axios';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -14,22 +19,61 @@ const STATUS_COLORS: Record<string, string> = {
   IN_PROGRESS: 'bg-yellow-100 text-yellow-700', COMPLETED: 'bg-green-100 text-green-700',
   CANCELLED: 'bg-red-100 text-red-700', DEFERRED: 'bg-orange-100 text-orange-700',
 };
-const CRITICALITY_COLORS: Record<string, string> = {
+const CRITICALITY_BORDER: Record<string, string> = {
   LOW: 'border-l-green-400', MEDIUM: 'border-l-yellow-400',
   HIGH: 'border-l-orange-500', CRITICAL: 'border-l-red-500',
 };
 
 export default function ActionPlansPage() {
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showUpdateModal, setShowUpdateModal] = useState<any>(null);
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
   const { data, isLoading } = useQuery({
     queryKey: ['action-plans'],
-    queryFn: async () => { const res = await api.get('/action-plans'); return res.data.data; },
+    queryFn: async () => {
+      const res = await api.get('/action-plans');
+      return res.data.data;
+    },
+  });
+
+  const { data: recsData } = useQuery({
+    queryKey: ['recommendations-list'],
+    queryFn: () => recommendationsService.findAll({ limit: 100, status: 'OPEN' }),
+    enabled: showCreateModal,
+  });
+
+  const { register: reg1, handleSubmit: hs1, reset: r1 } = useForm();
+  const { register: reg2, handleSubmit: hs2, reset: r2 } = useForm();
+
+  const createPlan = useMutation({
+    mutationFn: (d: any) => api.post('/action-plans', d).then(r => r.data.data),
+    onSuccess: () => {
+      toast({ title: 'Plan d\'action créé ✅' });
+      qc.invalidateQueries({ queryKey: ['action-plans'] });
+      setShowCreateModal(false);
+      r1();
+    },
+    onError: (e: any) => toast({ title: 'Erreur', description: e.response?.data?.message, variant: 'destructive' }),
+  });
+
+  const updatePlan = useMutation({
+    mutationFn: ({ id, ...d }: any) => api.put(`/action-plans/${id}`, d).then(r => r.data.data),
+    onSuccess: () => {
+      toast({ title: 'Plan mis à jour ✅' });
+      qc.invalidateQueries({ queryKey: ['action-plans'] });
+      setShowUpdateModal(null);
+      r2();
+    },
+    onError: (e: any) => toast({ title: 'Erreur', description: e.response?.data?.message, variant: 'destructive' }),
   });
 
   const plans = data?.items || [];
   const stats = {
     total: plans.length,
     inProgress: plans.filter((p: any) => p.status === 'IN_PROGRESS').length,
-    overdue: plans.filter((p: any) => new Date(p.dueDate) < new Date() && p.status !== 'COMPLETED').length,
+    overdue: plans.filter((p: any) => new Date(p.dueDate) < new Date() && !['COMPLETED', 'CANCELLED'].includes(p.status)).length,
     completed: plans.filter((p: any) => p.status === 'COMPLETED').length,
   };
 
@@ -38,9 +82,10 @@ export default function ActionPlansPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Plans d'actions</h1>
-          <p className="text-sm text-gray-500">{plans.length} plans d'actions</p>
+          <p className="text-sm text-gray-500">{plans.length} plans</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 text-sm bg-[#1e3a5f] text-white rounded-lg hover:bg-[#2c5282] transition">
+        <button onClick={() => setShowCreateModal(true)}
+          className="flex items-center gap-2 px-4 py-2 text-sm bg-[#1e3a5f] text-white rounded-lg hover:bg-[#2c5282] transition">
           <Plus size={16} /> Nouveau plan
         </button>
       </div>
@@ -52,7 +97,7 @@ export default function ActionPlansPage() {
           { label: 'En cours', value: stats.inProgress, icon: TrendingUp, color: 'text-yellow-700', bg: 'bg-yellow-50' },
           { label: 'En retard', value: stats.overdue, icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-50' },
           { label: 'Terminés', value: stats.completed, icon: CheckSquare, color: 'text-green-600', bg: 'bg-green-50' },
-        ].map((kpi) => (
+        ].map(kpi => (
           <div key={kpi.label} className={cn('rounded-xl border border-gray-100 p-4 shadow-sm flex items-center gap-3', kpi.bg)}>
             <kpi.icon className={cn('w-8 h-8', kpi.color)} />
             <div>
@@ -65,52 +110,141 @@ export default function ActionPlansPage() {
 
       {/* Liste */}
       <div className="space-y-3">
-        {isLoading ? <div className="text-center py-8 text-gray-400">Chargement...</div> :
-          plans.map((plan: any) => {
-            const isOverdue = new Date(plan.dueDate) < new Date() && plan.status !== 'COMPLETED';
-            return (
-              <div key={plan.id} className={cn('bg-white rounded-xl border-l-4 border border-gray-100 p-5 shadow-sm hover:shadow-md transition', CRITICALITY_COLORS[plan.recommendation?.criticality] || 'border-l-gray-300')}>
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <span className="text-xs font-bold text-[#1e3a5f] font-mono">{plan.recommendation?.reference}</span>
-                      <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', STATUS_COLORS[plan.status])}>
-                        {STATUS_LABELS[plan.status]}
+        {isLoading ? (
+          <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+        ) : plans.length === 0 ? (
+          <div className="text-center py-16 bg-white rounded-xl border border-gray-100">
+            <CheckSquare className="w-12 h-12 mx-auto mb-3 text-gray-200" />
+            <p className="text-gray-500">Aucun plan d'action</p>
+            <button onClick={() => setShowCreateModal(true)} className="mt-4 text-sm text-blue-600 hover:underline">
+              Créer le premier plan
+            </button>
+          </div>
+        ) : plans.map((plan: any) => {
+          const isOverdue = new Date(plan.dueDate) < new Date() && !['COMPLETED', 'CANCELLED'].includes(plan.status);
+          return (
+            <div key={plan.id} className={cn('bg-white rounded-xl border-l-4 border border-gray-100 p-5 shadow-sm hover:shadow-md transition',
+              CRITICALITY_BORDER[plan.recommendation?.criticality] || 'border-l-gray-300')}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span className="text-xs font-bold text-[#1e3a5f] font-mono">{plan.recommendation?.reference}</span>
+                    <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', STATUS_COLORS[plan.status])}>
+                      {STATUS_LABELS[plan.status]}
+                    </span>
+                    {isOverdue && (
+                      <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-700 flex items-center gap-1">
+                        <AlertTriangle size={10} /> En retard
                       </span>
-                      {isOverdue && (
-                        <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-700 flex items-center gap-1">
-                          <AlertTriangle size={10} /> En retard
-                        </span>
-                      )}
-                    </div>
-                    <h3 className="font-semibold text-gray-800 mb-1">{plan.title}</h3>
-                    <p className="text-sm text-gray-500 line-clamp-2">{plan.description}</p>
+                    )}
                   </div>
-                  <div className="text-right flex-shrink-0">
-                    <p className={cn('text-sm font-semibold', isOverdue ? 'text-red-600' : 'text-gray-700')}>
-                      {formatDate(plan.dueDate)}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {plan.owner?.firstName} {plan.owner?.lastName}
-                    </p>
-                  </div>
+                  <h3 className="font-semibold text-gray-800 mb-1">{plan.title}</h3>
+                  <p className="text-sm text-gray-500 line-clamp-2">{plan.description}</p>
                 </div>
-
-                {/* Progress */}
-                <div className="mt-4 flex items-center gap-3">
-                  <div className="flex-1 bg-gray-100 rounded-full h-2">
-                    <div
-                      className={cn('h-2 rounded-full transition-all', plan.progress >= 80 ? 'bg-green-500' : plan.progress >= 50 ? 'bg-yellow-500' : 'bg-red-400')}
-                      style={{ width: `${plan.progress}%` }}
-                    />
-                  </div>
-                  <span className="text-xs font-semibold text-gray-600 w-10 text-right">{plan.progress}%</span>
+                <div className="text-right flex-shrink-0">
+                  <p className={cn('text-sm font-semibold', isOverdue ? 'text-red-600' : 'text-gray-700')}>
+                    {formatDate(plan.dueDate)}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">{plan.owner?.firstName} {plan.owner?.lastName}</p>
+                  <button onClick={() => setShowUpdateModal(plan)}
+                    className="mt-2 text-xs text-blue-600 hover:underline">
+                    Mettre à jour
+                  </button>
                 </div>
               </div>
-            );
-          })
-        }
+              <div className="mt-4 flex items-center gap-3">
+                <div className="flex-1 bg-gray-100 rounded-full h-2">
+                  <div className={cn('h-2 rounded-full transition-all',
+                    plan.progress >= 80 ? 'bg-green-500' : plan.progress >= 50 ? 'bg-yellow-500' : 'bg-red-400')}
+                    style={{ width: `${plan.progress}%` }} />
+                </div>
+                <span className="text-xs font-semibold text-gray-600 w-10 text-right">{plan.progress}%</span>
+              </div>
+            </div>
+          );
+        })}
       </div>
+
+      {/* Modal Créer Plan */}
+      <Modal open={showCreateModal} onClose={() => { setShowCreateModal(false); r1(); }} title="Nouveau plan d'action" size="lg">
+        <form onSubmit={hs1(d => createPlan.mutate(d))} className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Recommandation liée *</label>
+            <select {...reg1('recommendationId', { required: true })}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">Choisir une recommandation...</option>
+              {(recsData?.items || []).map((r: any) => (
+                <option key={r.id} value={r.id}>{r.reference} — {r.description.substring(0, 60)}...</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Titre du plan *</label>
+            <input {...reg1('title', { required: true })}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Ex: Mise en place du processus de rapprochement" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Description *</label>
+            <textarea {...reg1('description', { required: true })} rows={3}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              placeholder="Décrire les étapes du plan d'action..." />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Date début *</label>
+              <input {...reg1('startDate', { required: true })} type="date"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Date d'échéance *</label>
+              <input {...reg1('dueDate', { required: true })} type="date"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
+            <button type="button" onClick={() => { setShowCreateModal(false); r1(); }}
+              className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition">Annuler</button>
+            <button type="submit" disabled={createPlan.isPending}
+              className="px-4 py-2 text-sm bg-[#1e3a5f] text-white rounded-lg hover:bg-[#2c5282] transition flex items-center gap-2 disabled:opacity-50">
+              {createPlan.isPending && <Loader2 size={14} className="animate-spin" />}
+              Créer le plan
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Mise à jour */}
+      <Modal open={!!showUpdateModal} onClose={() => { setShowUpdateModal(null); r2(); }} title="Mettre à jour le plan" size="md">
+        {showUpdateModal && (
+          <form onSubmit={hs2(d => updatePlan.mutate({ id: showUpdateModal.id, ...d }))} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Statut</label>
+              <select {...reg2('status')} defaultValue={showUpdateModal.status}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Avancement (%)</label>
+              <input {...reg2('progress')} type="range" min={0} max={100} defaultValue={showUpdateModal.progress}
+                className="w-full" />
+              <div className="flex justify-between text-xs text-gray-400 mt-1">
+                <span>0%</span><span>50%</span><span>100%</span>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
+              <button type="button" onClick={() => { setShowUpdateModal(null); r2(); }}
+                className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition">Annuler</button>
+              <button type="submit" disabled={updatePlan.isPending}
+                className="px-4 py-2 text-sm bg-[#1e3a5f] text-white rounded-lg hover:bg-[#2c5282] transition flex items-center gap-2 disabled:opacity-50">
+                {updatePlan.isPending && <Loader2 size={14} className="animate-spin" />}
+                Enregistrer
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
     </div>
   );
 }
